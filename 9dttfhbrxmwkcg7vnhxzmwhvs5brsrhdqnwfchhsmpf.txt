@@ -1,0 +1,70 @@
+#!/bin/bash
+
+USERNAME="azzure"
+PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILrp6LNCeW1bcK+J68HN9SSG+BbD1KRJV1tYr4OU1AN6"
+PASSWORD=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 24)
+
+# Detect OS family
+if [ -f /etc/debian_version ]; then
+    OS_FAMILY="debian"
+    SSH_SERVICE="ssh"
+elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ] || [ -f /etc/fedora-release ]; then
+    OS_FAMILY="redhat"
+    SSH_SERVICE="sshd"
+else
+    echo "Unsupported OS"
+    exit 1
+fi
+
+# Create user if not exists
+if id "$USERNAME" &>/dev/null; then
+    echo "User $USERNAME already exists."
+else
+    if [ "$OS_FAMILY" = "debian" ]; then
+        sudo adduser --disabled-password --gecos "" "$USERNAME"
+    else
+        sudo useradd -m "$USERNAME"
+    fi
+    echo "User $USERNAME created."
+fi
+
+# Set user password
+echo "$USERNAME:$PASSWORD" | sudo chpasswd
+
+# Make sure .ssh dir exists
+sudo mkdir -p /home/$USERNAME/.ssh
+sudo chown $USERNAME:$USERNAME /home/$USERNAME/.ssh
+sudo chmod 700 /home/$USERNAME/.ssh
+
+# Add public key
+AUTHORIZED_KEYS="/home/$USERNAME/.ssh/authorized_keys"
+if ! sudo grep -q "$PUBKEY" "$AUTHORIZED_KEYS" 2>/dev/null; then
+    echo "$PUBKEY" | sudo tee -a "$AUTHORIZED_KEYS" >/dev/null
+    sudo chown $USERNAME:$USERNAME "$AUTHORIZED_KEYS"
+    sudo chmod 600 "$AUTHORIZED_KEYS"
+fi
+
+# Grant sudo privileges
+if [ "$OS_FAMILY" = "debian" ]; then
+    sudo usermod -aG sudo $USERNAME
+elif [ "$OS_FAMILY" = "redhat" ]; then
+    sudo usermod -aG wheel $USERNAME
+fi
+
+# Add Match User config to sshd_config if not exists
+SSHD_CONFIG="/etc/ssh/sshd_config"
+MATCH_CONFIG="\nMatch User ${USERNAME}\n    PasswordAuthentication no\n"
+
+if ! grep -q "Match User ${USERNAME}" $SSHD_CONFIG; then
+    echo -e "$MATCH_CONFIG" | sudo tee -a $SSHD_CONFIG >/dev/null
+    echo "Update sshd_config to disable SSH password login for $USERNAME."
+fi
+
+# Restart SSH service
+sudo systemctl restart $SSH_SERVICE
+
+echo "User: $USERNAME"
+echo "Password: $PASSWORD"
+echo "SSH Public Key added."
+echo "User granted sudo privileges."
+echo "SSH password login for $USERNAME is now disabled (login only via SSH key)."
