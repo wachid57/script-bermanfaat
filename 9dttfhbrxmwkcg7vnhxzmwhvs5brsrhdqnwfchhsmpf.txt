@@ -1,8 +1,13 @@
 #!/bin/bash
 
 USERNAME="azzure"
-PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILrp6LNCeW1bcK+J68HN9SSG+BbD1KRJV1tYr4OU1AN6"
 PASSWORD=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 24)
+
+PUBKEYS=(
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILrp6LNCeW1bcK+J68HN9SSG+BbD1KRJV1tYr4OU1AN6"
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDV2cKC5/YCu4DiFdsSbCtYCUY5FlWUCcwM5ojXNccNaJ3+6FXr1FUNrUOTxb0bk9j48HMMSeoR9osgszDeXpsSw1o00rbT9gO4EHJVwBDap5bUDJES4c2wYP+HOu3XlzfdsczUNArI6XvkjeWZnTh2lBRvEPs6FQZCR4YsVjXkRKjrCBOMnwXZS7VoB5J1QdjHPoRkuOXYPyPfnsI5Wl5ULg8IQUVBo2uWNFDDUjJsiF63xA449RRyWMBjB7DqIBQ7Oc+QHLjocEqg/dAfT3M+Gt3MYcKKmvOs5DqtpvwGIGile8oQcibnU2GWzS6wj6ppRj10a+oiZDObEFmxErDj0ceRSXcLvRWw9EduNWkjeRYNttYR5AvXLUsPoWq8F2bk2jSBoNE3PcnrbYiU9/7lxb5qmtM/BeP7wNA1+XEFqqa5katTghaiw0nCE3zGm+XzG8dtXIoApFDVA0RtY5pw3rV6WhuR8oys3ibYikJP4kjyGxlMpuWnm1FFggmrsaU= lonot@LAPTOP-0KCRCR4U"
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCbpxOTqAUuzmB5TXz22TqDniZiYKv0tmy2TQDwoOHoFf6wQ7zdo/rHtsQ+LgjnboQXV61ULvXUyaYY00llcNXM1bAtamZLz37TOUziEgiO9EPjgUJ5As1iECqMZEyWpLHXfCy1chlUHm9QGnLsHSNF9ThJCqLBVLvFD8jO9d6ZvtSKJG5nzZs3iWkNdO1Kquk40JfoOhuVs59fgQZHDiclNZDr5dz+NwSzWhLgF5vtcc11Qo7u5m940jJJ0YuZvccNcfEuuXDUhdN4J8qQcpi+oCTL6zO+ghvLrsd+3tU6X0OCmuAC8VBB/Ng94AnhpSbl1xZytL7qOk3KkPxWG8DL rsa-key-20251112"
+)
 
 # Detect OS family
 if [ -f /etc/debian_version ]; then
@@ -31,18 +36,24 @@ fi
 # Set user password
 echo "$USERNAME:$PASSWORD" | sudo chpasswd
 
-# Make sure .ssh dir exists
-sudo mkdir -p /home/$USERNAME/.ssh
-sudo chown $USERNAME:$USERNAME /home/$USERNAME/.ssh
-sudo chmod 700 /home/$USERNAME/.ssh
+# Setup SSH keys
+HOME_DIR="/home/$USERNAME"
+SSH_DIR="$HOME_DIR/.ssh"
+AUTHORIZED_KEYS="$SSH_DIR/authorized_keys"
 
-# Add public key
-AUTHORIZED_KEYS="/home/$USERNAME/.ssh/authorized_keys"
-if ! sudo grep -q "$PUBKEY" "$AUTHORIZED_KEYS" 2>/dev/null; then
-    echo "$PUBKEY" | sudo tee -a "$AUTHORIZED_KEYS" >/dev/null
-    sudo chown $USERNAME:$USERNAME "$AUTHORIZED_KEYS"
-    sudo chmod 600 "$AUTHORIZED_KEYS"
-fi
+sudo mkdir -p $SSH_DIR
+sudo chown $USERNAME:$USERNAME $SSH_DIR
+sudo chmod 700 $SSH_DIR
+
+# Add each public key if not already present
+for key in "${PUBKEYS[@]}"; do
+    if ! sudo grep -qF "$key" "$AUTHORIZED_KEYS" 2>/dev/null; then
+        echo "$key" | sudo tee -a "$AUTHORIZED_KEYS" >/dev/null
+        echo "Added key: ${key:0:30}..."
+    fi
+done
+sudo chown $USERNAME:$USERNAME "$AUTHORIZED_KEYS"
+sudo chmod 600 "$AUTHORIZED_KEYS"
 
 # Grant sudo privileges
 if [ "$OS_FAMILY" = "debian" ]; then
@@ -65,6 +76,6 @@ sudo systemctl restart $SSH_SERVICE
 
 echo "User: $USERNAME"
 echo "Password: $PASSWORD"
-echo "SSH Public Key added."
+echo "Public keys added to authorized_keys."
 echo "User granted sudo privileges."
 echo "SSH password login for $USERNAME is now disabled (login only via SSH key)."
